@@ -15,18 +15,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Check uploaded ZIP
         run: |
-          xcodebuild -version
-          xcode-select -p
+          set -euo pipefail
+          ls -la
+          test -f Luma-Firebase-Ready.zip
+
+      - name: Extract Luma project
+        run: |
+          set -euo pipefail
+          mkdir -p unpacked
+          unzip -q Luma-Firebase-Ready.zip -d unpacked
+          test -f unpacked/Luma/project.yml
+          test -f unpacked/Luma/GoogleService-Info.plist
+          ls -la unpacked/Luma
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
+        working-directory: unpacked/Luma
         run: xcodegen generate
 
       - name: Build unsigned iOS app
+        working-directory: unpacked/Luma
         run: |
           set -euo pipefail
           xcodebuild \
@@ -35,18 +47,25 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
+            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             build
 
       - name: Package unsigned IPA
+        working-directory: unpacked/Luma
         run: |
           set -euo pipefail
-          APP_PATH="build/Build/Products/Release-iphoneos/Luma.app"
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Luma.app"
           test -d "$APP_PATH"
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          zip -r Luma.ipa Payload
+          mkdir -p ipa/Payload
+          cp -R "$APP_PATH" ipa/Payload/Luma.app
+          cd ipa
+          zip -qr ../../../../Luma.ipa Payload
+          cd ../../../../
+          test -f Luma.ipa
+          ls -lh Luma.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -54,3 +73,4 @@ jobs:
           name: Luma-unsigned-IPA
           path: Luma.ipa
           if-no-files-found: error
+          retention-days: 14
